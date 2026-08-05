@@ -1,25 +1,12 @@
 [package]
 name = "evgl-dioxus-web"
 version = "0.1.0"
-edition = "2021"
-rust-version = "1.82"
-license = "MIT"
-description = "Dioxus SSR + Axum + WebSocket comparison server for Evento Globolo."
-repository = "https://github.com/evento-globolo/evgl-dioxus-web"
+edition = "2024"
 publish = false
 
-[dependencies]
-axum = { version = "0.8", features = ["ws"] }
-dioxus = { version = "0.6", features = ["ssr"] }
-dioxus-ssr = "0.6"
-futures-util = "0.3"
-serde_json = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync"] }
-tower-http = { version = "0.6", features = ["trace"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+[package.metadata.product]
+stack = "Dioxus with shared interfaces"
 
-[profile.release]
-lto = "thin"
-codegen-units = 1
-strip = "symbols"
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
