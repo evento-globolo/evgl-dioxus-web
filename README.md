@@ -31,3 +31,40 @@ cargo test 2>/dev/null || true
 ## Status
 
 Foundation scaffold. Domain behavior, persistence migrations, authentication policy, and production secrets must be reviewed before deployment.
+
+## Cross-surface delivery
+
+User-visible, event, venue, attendee, ticket, RSVP, publication, check-in,
+notification, permission, navigation, or deep-link changes in this Rust web
+server must be evaluated for:
+
+- `evento-globolo/evgl-flutter` on Android, iOS, Flutter Web/mobile web, and
+  Flutter desktop;
+- `evento-globolo/evgl-desktop.rs`, the planned Tauri 2 desktop app; and
+- `evgl-interfaces`, generated clients, event/venue/attendee/ticket schemas,
+  route types, offline-sync fixtures, and conformance tests.
+
+This is judgment-based coordination. SEO, public discovery, and
+server-rendered web presentation may remain web-only. Native check-in hardware,
+printing, local files, secure storage, offline operation, and desktop
+notifications may be native-specific. Event/venue identity, ticket and RSVP
+state, attendee/check-in semantics, publication status, permissions, errors,
+and navigation normally require coordinated updates or an explicit no-change
+rationale and parity follow-up.
+
+Deep links are HTTPS-first:
+
+```text
+https://<verified-evento-globolo-owned-host>/open/<route>?<bounded-query>
+```
+
+with `evgl://` fallback. Dioxus web, Flutter, and Tauri desktop must share
+versioned route types and fixtures and support cold start, already-running
+delivery, authentication resume, replay/expiry rejection, and browser fallback.
+Payment credentials, ticket secrets, attendee private data, check-in tokens,
+provider credentials, and bearer/refresh tokens are prohibited in URLs.
+Ticket, RSVP, check-in, invitation, and import handoffs use bounded identifiers
+or short-lived, single-use, audience-bound codes and explicit confirmation.
+
+See [`docs/CROSS_SURFACE_DELIVERY.md`](docs/CROSS_SURFACE_DELIVERY.md) and the
+[portfolio policy](https://github.com/ORESoftware/project-registry/blob/main/docs/cross-surface-delivery.md).
