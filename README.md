@@ -14,6 +14,8 @@ This repository was bootstrapped on 2026-08-04. It is designed as an independent
 
 - Rust 2024 edition for backend and native components.
 - Axum HTTP/WebSocket transport.
+- Live provider-capability map backed by `EVGL_API_URL`.
+- Bounded, non-reflective `/ws` and `/v1/ws` control channels with ping/pong support.
 - Supabase/PostgreSQL configuration through `DATABASE_URL`, `SUPABASE_URL`, and environment-only secrets.
 - OpenTelemetry-compatible tracing hooks.
 - Docker, Nix, and GitHub Actions entry points.
@@ -30,7 +32,7 @@ cargo test 2>/dev/null || true
 
 ## Status
 
-Foundation scaffold. Domain behavior, persistence migrations, authentication policy, and production secrets must be reviewed before deployment.
+The SSR and provider-control foundation is implemented. Persistence migrations, end-user authentication policy, and production secrets must still be reviewed before deployment.
 
 ## Cross-surface delivery
 
