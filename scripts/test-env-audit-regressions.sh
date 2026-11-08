@@ -195,6 +195,93 @@ PY
 expect_denied "duplicate age recovery key" "duplicate age recipient"
 rm "$fixture/env/enc/dev.env.enc"
 
+
+# Mutate *real* encrypted bytes in an isolated fixture. Each case starts from
+# an untouched source ciphertext, then proves the fail-closed reason, not just
+# a nonzero exit from a broken runner. These mutations contain no real secrets.
+mutate_ciphertext_case() {
+  local scenario="$1" expected="$2"
+  cp "$root/env/enc/dev.env.enc" "$fixture/env/enc/dev.env.enc"
+  python3 - "$fixture/env/enc/dev.env.enc" "$scenario" <<'PY'
+from pathlib import Path
+import base64
+import re
+import sys
+
+path, scenario = Path(sys.argv[1]), sys.argv[2]
+original = path.read_text()
+lines = original.splitlines(keepends=True)
+
+def set_key(name, value):
+    matches = [i for i, line in enumerate(lines) if line.startswith(name + "=")]
+    assert len(matches) == 1, name
+    lines[matches[0]] = name + "=" + value + "\n"
+
+def mac_transform(pattern, replacement):
+    matches = [i for i, line in enumerate(lines) if line.startswith("sops_mac=")]
+    assert len(matches) == 1
+    i = matches[0]
+    lines[i], n = re.subn(pattern, replacement, lines[i], count=1)
+    assert n == 1, pattern
+
+if scenario == "short_sops_iv":
+    mac_transform(r"iv:[^,]+", "iv:" + base64.b64encode(bytes(12)).decode())
+elif scenario == "short_tag":
+    mac_transform(r"tag:[^,]+", "tag:" + base64.b64encode(bytes(8)).decode())
+elif scenario == "invalid_iv_base64":
+    mac_transform(r"iv:[^,]+", "iv:A=")
+elif scenario == "invalid_mac_envelope":
+    set_key("sops_mac", "not-an-encrypted-MAC")
+elif scenario == "missing_version":
+    lines = [line for line in lines if not line.startswith("sops_version=")]
+elif scenario == "malformed_version":
+    set_key("sops_version", "not-semver")
+elif scenario == "malformed_timestamp":
+    set_key("sops_lastmodified", "yesterday")
+elif scenario == "unknown_unencrypted_suffix":
+    set_key("sops_unencrypted_suffix", "PASSWORD")
+elif scenario == "missing_recipient_index":
+    lines = [line.replace("sops_age__list_1__", "sops_age__list_9__") for line in lines]
+elif scenario == "invalid_age_recipient":
+    set_key("sops_age__list_1__map_recipient", "age1not-a-valid-public-key")
+elif scenario == "duplicate_business_key":
+    lines.append(next(line for line in lines if line.startswith("HOST=")))
+elif scenario == "malformed_dotenv_line":
+    lines.append("NOT_AN_ASSIGNMENT\n")
+elif scenario == "unknown_sops_field":
+    lines.append("sops_private_test_marker=not-a-secret\n")
+elif scenario == "commented_plaintext":
+    lines.append("# CLOUD_SECRET=fixture-data-only\n")
+elif scenario == "oversized_file":
+    lines.append("#" + "X" * 1_100_000 + "\n")
+elif scenario == "invalid_utf8":
+    path.write_bytes("".join(lines).encode("utf-8") + b"\xff")
+    sys.exit(0)
+else:
+    raise AssertionError("unknown mutation " + scenario)
+path.write_text("".join(lines))
+PY
+  expect_denied "$scenario" "$expected"
+  rm "$fixture/env/enc/dev.env.enc"
+}
+
+mutate_ciphertext_case short_sops_iv "invalid SOPS iv length for sops_mac"
+mutate_ciphertext_case short_tag "invalid tag length for sops_mac"
+mutate_ciphertext_case invalid_iv_base64 "invalid base64 SOPS iv for sops_mac"
+mutate_ciphertext_case invalid_mac_envelope "invalid SOPS AES-GCM envelope for sops_mac"
+mutate_ciphertext_case missing_version "missing or invalid SOPS version"
+mutate_ciphertext_case malformed_version "missing or invalid SOPS version"
+mutate_ciphertext_case malformed_timestamp "missing or invalid SOPS modification timestamp"
+mutate_ciphertext_case unknown_unencrypted_suffix "unexpected SOPS unencrypted suffix"
+mutate_ciphertext_case missing_recipient_index "needs >= 2 contiguous age recipient entries"
+mutate_ciphertext_case invalid_age_recipient "invalid or missing age recipient at index 1"
+mutate_ciphertext_case duplicate_business_key "duplicate dotenv key HOST"
+mutate_ciphertext_case malformed_dotenv_line "invalid dotenv assignment"
+mutate_ciphertext_case unknown_sops_field "unexpected SOPS metadata key sops_private_test_marker"
+mutate_ciphertext_case commented_plaintext "plaintext dotenv assignment in ciphertext comment"
+mutate_ciphertext_case oversized_file "ciphertext exceeds 1 MiB structural audit budget"
+mutate_ciphertext_case invalid_utf8 "ciphertext must be UTF-8 dotenv"
+
 # Repo release policy: both encrypted environments must exist, be regular
 # files, and be in Git's index (no source checkout, keys, or plaintext touched).
 run_required() (
@@ -240,4 +327,4 @@ rm "$fixture/env/enc/dev.env.enc" "$fixture/env/enc/prod.env.enc"
 run_check >"$log" 2>&1 || { cat "$log" >&2; exit 1; }
 test ! -e "$fixture/env/dec" && test ! -L "$fixture/env/dec" \
   || { echo "FAIL: final audit created env/dec" >&2; exit 1; }
-echo "PASS: keyless clean + real ciphertext controls; 22 adversarial cases (including missing/unsafe release ciphertext, forged markers, corrupt GCM, duplicate keys, and missing Git)"
+echo "PASS: keyless clean + real ciphertext controls; 38 adversarial cases (including malformed envelopes, comments, release ciphertext, forged markers, corrupt GCM, duplicate keys, and missing Git)"
