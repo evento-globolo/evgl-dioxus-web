@@ -42,6 +42,17 @@ test ! -e "$fixture/env/dec" && test ! -L "$fixture/env/dec" \
   || { echo "FAIL: read-only audit created env/dec" >&2; exit 1; }
 echo "PASS: keyless, read-only clean fixture"
 
+# Every secret-path component must reject symlink substitution.
+rmdir "$fixture/env/enc"
+ln -s "$fixture/keyless-home" "$fixture/env/enc"
+expect_denied "env/enc symlink" "env/enc must not be a symlink"
+unlink "$fixture/env/enc"
+rmdir "$fixture/env"
+ln -s "$fixture/keyless-home" "$fixture/env"
+expect_denied "env root symlink" "env must not be a symlink"
+unlink "$fixture/env"
+mkdir -p "$fixture/env/enc"
+
 ln -s "$fixture/keyless-home" "$fixture/env/dec"
 expect_denied "env/dec symlink" "env/dec must not be a symlink"
 unlink "$fixture/env/dec"
@@ -55,6 +66,14 @@ git -C "$fixture" add -f .env
 expect_denied "force-staged plaintext dotenv" "plaintext env files are tracked"
 git -C "$fixture" reset -q HEAD -- .env
 rm "$fixture/.env"
+
+# Committing a private-key-shaped path must be rejected even if it was
+# force-added against .gitignore. This is a fake fixture, never a real key.
+printf 'FIXTURE-NOT-A-REAL-AGE-KEY\n' >"$fixture/keys.txt"
+git -C "$fixture" add -f keys.txt
+expect_denied "force-staged private-key filename" "possible private keys tracked"
+git -C "$fixture" reset -q HEAD -- keys.txt
+rm "$fixture/keys.txt"
 
 # Check fail-closed behavior if a required ignore rule is removed.
 sed -i '/^env\/dec\/$/d' "$fixture/.gitignore"
@@ -80,4 +99,4 @@ rm "$fixture/env/enc/dev.env.enc"
 run_check >"$log" 2>&1 || { cat "$log" >&2; exit 1; }
 test ! -e "$fixture/env/dec" && test ! -L "$fixture/env/dec" \
   || { echo "FAIL: final audit created env/dec" >&2; exit 1; }
-echo "PASS: seven keyless env-check controls (clean, symlink, non-directory, force-stage, ignore rule, MAC, recipient count) plus plaintext denial"
+echo "PASS: clean keyless control plus ten adversarial denial cases (symlinks, plaintext, private key, ignore rules, ciphertext shape)"
