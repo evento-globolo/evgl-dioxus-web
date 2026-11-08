@@ -113,8 +113,8 @@ rm "$fixture/env/enc/dev.env.enc"
 printf '%s\n' \
   '#ENC[AES256_GCM,data:fake,iv:fake,tag:fake,type:str]' \
   'sops_mac=fixture' \
-  'map_recipient=fixture-one' \
-  'map_recipient=fixture-two' >"$fixture/env/enc/dev.env.enc"
+  'sops_age__list_0__map_recipient=fixture-one' \
+  'sops_age__list_1__map_recipient=fixture-two' >"$fixture/env/enc/dev.env.enc"
 expect_denied "forged marker-only ciphertext" "invalid SOPS AES-GCM envelope for sops_mac"
 rm "$fixture/env/enc/dev.env.enc"
 
