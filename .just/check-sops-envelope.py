@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Keyless *structural* SOPS dotenv-envelope validator (not authentication).
 
-No private age keys, sops binary, or network access are needed. Valid structure
+No private age keys, sops binary, or network access are needed. SOPS
+uses a 32-byte encoded IV field in this dotenv format, not the 12-byte
+internal GCM counter nonce; the authentication tag is 16 bytes. Valid structure
 does not prove the MAC or ciphertext genuine: only SOPS decryption with a
 trusted key can authenticate them. This gate rejects cheap marker spoofing.
 """
@@ -31,7 +33,7 @@ def encrypted(value: str, path: Path, field: str) -> None:
         fail(path, f"invalid SOPS AES-GCM envelope for {field}")
     for name, encoded, exact_len in (
         ("data", match.group(1), None),
-        ("nonce", match.group(2), 12),
+        ("SOPS iv", match.group(2), 32),
         ("tag", match.group(3), 16),
     ):
         try:
