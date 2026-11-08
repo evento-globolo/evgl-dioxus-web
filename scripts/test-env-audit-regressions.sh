@@ -6,13 +6,14 @@ set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
 fixture="$(mktemp -d)"
 trap 'rm -rf -- "$fixture"' EXIT
-mkdir -p "$fixture/.just" "$fixture/env/enc" "$fixture/keyless-config" "$fixture/keyless-home"
+mkdir -p "$fixture/.just" "$fixture/scripts" "$fixture/env/enc" "$fixture/keyless-config" "$fixture/keyless-home"
 cp "$root/justfile" "$fixture/justfile"
 cp "$root/.just/env.just" "$fixture/.just/env.just"
 cp "$root/.just/check-sops-envelope.py" "$fixture/.just/check-sops-envelope.py"
+cp "$root/scripts/check-required-ciphertext.sh" "$fixture/scripts/check-required-ciphertext.sh"
 cp "$root/.gitignore" "$fixture/.gitignore"
 git -C "$fixture" init -q
-git -C "$fixture" add justfile .just/env.just .just/check-sops-envelope.py .gitignore
+git -C "$fixture" add justfile .just/env.just .just/check-sops-envelope.py scripts/check-required-ciphertext.sh .gitignore
 git -C "$fixture" -c user.name=env-audit-test -c user.email=env-audit-test@example.invalid commit -qm "isolated fixture"
 
 run_check() (
@@ -187,7 +188,49 @@ PY
 expect_denied "duplicate age recovery key" "duplicate age recipient"
 rm "$fixture/env/enc/dev.env.enc"
 
+# Repo release policy: both encrypted environments must exist, be regular
+# files, and be in Git's index (no source checkout, keys, or plaintext touched).
+run_required() (
+  cd "$fixture"
+  bash scripts/check-required-ciphertext.sh
+)
+expect_required_denied() {
+  local case_name="$1" expected="$2"
+  if run_required >"$log" 2>&1; then
+    echo "FAIL: release policy accepted $case_name" >&2
+    exit 1
+  fi
+  if ! grep -Fq -- "$expected" "$log"; then
+    echo "FAIL: release policy denied $case_name for the wrong reason:" >&2
+    cat "$log" >&2
+    exit 1
+  fi
+  echo "PASS: rejected $case_name"
+}
+cp "$root/env/enc/dev.env.enc" "$fixture/env/enc/dev.env.enc"
+cp "$root/env/enc/prod.env.enc" "$fixture/env/enc/prod.env.enc"
+git -C "$fixture" add env/enc/dev.env.enc env/enc/prod.env.enc
+run_required >"$log" 2>&1 || { cat "$log" >&2; exit 1; }
+echo "PASS: tracked dev and prod ciphertext release gate"
+
+rm "$fixture/env/enc/dev.env.enc"
+expect_required_denied "missing required dev ciphertext" "required ciphertext env/enc/dev.env.enc missing"
+cp "$root/env/enc/dev.env.enc" "$fixture/env/enc/dev.env.enc"
+
+git -C "$fixture" rm --cached -q -- env/enc/prod.env.enc
+expect_required_denied "untracked required prod ciphertext" "required ciphertext env/enc/prod.env.enc must be tracked"
+git -C "$fixture" add env/enc/prod.env.enc
+
+rm "$fixture/env/enc/prod.env.enc"
+ln -s "$root/env/enc/prod.env.enc" "$fixture/env/enc/prod.env.enc"
+expect_required_denied "symlinked required prod ciphertext" "required ciphertext env/enc/prod.env.enc missing, symlinked"
+unlink "$fixture/env/enc/prod.env.enc"
+cp "$root/env/enc/prod.env.enc" "$fixture/env/enc/prod.env.enc"
+
+git -C "$fixture" reset -q HEAD -- env/enc/dev.env.enc env/enc/prod.env.enc
+rm "$fixture/env/enc/dev.env.enc" "$fixture/env/enc/prod.env.enc"
+
 run_check >"$log" 2>&1 || { cat "$log" >&2; exit 1; }
 test ! -e "$fixture/env/dec" && test ! -L "$fixture/env/dec" \
   || { echo "FAIL: final audit created env/dec" >&2; exit 1; }
-echo "PASS: keyless clean + real ciphertext controls; 18 adversarial cases (including forged markers, corrupt GCM, duplicate keys, and missing Git)"
+echo "PASS: keyless clean + real ciphertext controls; 21 adversarial cases (including missing/unsafe release ciphertext, forged markers, corrupt GCM, duplicate keys, and missing Git)"
