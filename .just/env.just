@@ -222,12 +222,33 @@ env-keygen: _env-dec
 
 # Fail-closed audit: no plaintext in git, gitignore intact, ciphertext valid.
 [group('env')]
-env-check: _env-dec
+env-check:
     #!/usr/bin/env bash
     set -euo pipefail
     cd {{ justfile_directory() }}
     fail=0
     note() { echo "  ✗ $1"; fail=1; }
+
+    # Missing Git metadata must not be interpreted as an empty tracked-file
+    # list (git ls-files stderr was previously discarded).
+    if [[ $(git rev-parse --is-inside-work-tree 2>/dev/null) != true ]]        || ! git ls-files -z >/dev/null 2>&1; then
+      echo "  ✗ env-check requires a readable Git checkout and index" >&2
+      exit 1
+    fi
+
+    # A read-only, key-independent audit must not bootstrap a plaintext
+    # directory or require ores-sops on a fresh CI runner. Retain the same
+    # symlink/type refusal as _env-dec BEFORE walking any secret-shaped paths.
+    for rel in env env/enc env/dec; do
+      if [[ -L $rel ]]; then
+        echo "  ✗ $rel must not be a symlink" >&2
+        exit 1
+      fi
+      if [[ -e $rel && ! -d $rel ]]; then
+        echo "  ✗ $rel must be a directory" >&2
+        exit 1
+      fi
+    done
 
     echo "tracked files:"
     # Dotenv-shaped secrets: `.env`, `.env.<anything>`, and anything under
@@ -291,7 +312,13 @@ env-check: _env-dec
       if [[ $r -lt 2 ]]; then
         note "$f has $r recipient(s); needs >= 2 so a lost key is survivable"
       else
-        echo "  ✓ $f encrypted, $r recipients"
+        echo "  ✓ $f has $r recipient markers"
+      fi
+      # Markers alone are forgeable. Validate every dotenv value, Base64
+      # nonce/tag shape, MAC envelope, and distinct age-wrapped key slots.
+      # Cryptographic authenticity still requires authenticated decryption.
+      if ! python3 .just/check-sops-envelope.py "$f"; then
+        note "$f structurally invalid SOPS ciphertext"
       fi
     done
     [[ $found -eq 1 ]] || echo "  · no environments yet"
