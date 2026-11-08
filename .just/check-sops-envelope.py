@@ -8,6 +8,7 @@ does not prove the MAC or ciphertext genuine: only SOPS decryption with a
 trusted key can authenticate them. This gate rejects cheap marker spoofing.
 """
 import base64
+from datetime import datetime
 from pathlib import Path
 import re
 import sys
@@ -55,7 +56,13 @@ def inspect(path: Path) -> None:
         fail(path, "ciphertext must be UTF-8 dotenv")
     fields: dict[str, str] = {}
     for line in lines:
-        if not line.strip() or line.startswith("#"):
+        if not line.strip():
+            continue
+        if line.startswith("#"):
+            # SOPS may encrypt comments as #ENC[...], but a commented-out
+            # dotenv assignment would expose a readable secret in Git history.
+            if re.match(r"#\s*[A-Za-z_][A-Za-z0-9_]*\s*=", line):
+                fail(path, "plaintext dotenv assignment in ciphertext comment")
             continue
         if "=" not in line:
             fail(path, "invalid dotenv assignment")
@@ -71,10 +78,15 @@ def inspect(path: Path) -> None:
     encrypted(fields["sops_mac"], path, "sops_mac")
     if not _VERSION.fullmatch(fields.get("sops_version", "")):
         fail(path, "missing or invalid SOPS version")
-    if not fields.get("sops_lastmodified"):
-        fail(path, "missing SOPS modification timestamp")
-    if not fields.get("sops_unencrypted_suffix"):
-        fail(path, "missing SOPS unencrypted suffix")
+    timestamp = fields.get("sops_lastmodified", "")
+    try:
+        parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            raise ValueError("timezone missing")
+    except ValueError:
+        fail(path, "missing or invalid SOPS modification timestamp")
+    if fields.get("sops_unencrypted_suffix") != "_unencrypted":
+        fail(path, "unexpected SOPS unencrypted suffix")
 
     indexed: dict[int, dict[str, str]] = {}
     recipients: set[str] = set()
