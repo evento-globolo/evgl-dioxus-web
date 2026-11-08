@@ -84,6 +84,15 @@ def inspect(path: Path) -> None:
             index, kind = int(match.group(1)), match.group(2)
             indexed.setdefault(index, {})[kind] = value
         elif key.startswith("sops_"):
+            # Do not exempt arbitrary plaintext settings merely because their
+            # name begins with the reserved SOPS metadata prefix.
+            if key not in {
+                "sops_mac",
+                "sops_lastmodified",
+                "sops_unencrypted_suffix",
+                "sops_version",
+            }:
+                fail(path, f"unexpected SOPS metadata key {key}")
             continue
         else:
             # No plaintext settings can hide behind one legitimate marker.
