@@ -137,10 +137,14 @@ from pathlib import Path
 import re
 import sys
 p = Path(sys.argv[1])
-body = p.read_text()
-changed, n = re.subn(r"tag:[A-Za-z0-9+/=]+", "tag:INVALID!", body, count=1)
-assert n == 1
-p.write_text(changed)
+lines = p.read_text().splitlines(keepends=True)
+changed = 0
+for i, line in enumerate(lines):
+    if line.startswith("sops_mac="):
+        lines[i], n = re.subn(r"tag:[A-Za-z0-9+/=]+", "tag:INVALID!", line, count=1)
+        changed += n
+assert changed == 1
+p.write_text("".join(lines))
 PY
 expect_denied "invalid GCM authentication tag" "invalid SOPS AES-GCM envelope"
 rm "$fixture/env/enc/dev.env.enc"
