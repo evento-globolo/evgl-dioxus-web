@@ -125,6 +125,13 @@ printf '%s\n' "PUBLIC_TEST_VALUE=plaintext-fixture-only" >>"$fixture/env/enc/dev
 expect_denied "plaintext next to genuine ciphertext" "invalid SOPS AES-GCM envelope for PUBLIC_TEST_VALUE"
 rm "$fixture/env/enc/dev.env.enc"
 
+# A malicious plaintext dotenv value under the reserved metadata prefix
+# must not be exempted by a broad startswith("sops_") check.
+cp "$root/env/enc/dev.env.enc" "$fixture/env/enc/dev.env.enc"
+printf '%s\n' 'sops_hidden_plaintext=fixture-not-a-real-secret' >>"$fixture/env/enc/dev.env.enc"
+expect_denied "plaintext under unknown SOPS metadata prefix" "unexpected SOPS metadata key sops_hidden_plaintext"
+rm "$fixture/env/enc/dev.env.enc"
+
 # Duplicate dotenv keys can obscure which value a decoder or reviewer uses.
 cp "$root/env/enc/dev.env.enc" "$fixture/env/enc/dev.env.enc"
 printf '%s\n' "sops_version=3.11.0" >>"$fixture/env/enc/dev.env.enc"
@@ -233,4 +240,4 @@ rm "$fixture/env/enc/dev.env.enc" "$fixture/env/enc/prod.env.enc"
 run_check >"$log" 2>&1 || { cat "$log" >&2; exit 1; }
 test ! -e "$fixture/env/dec" && test ! -L "$fixture/env/dec" \
   || { echo "FAIL: final audit created env/dec" >&2; exit 1; }
-echo "PASS: keyless clean + real ciphertext controls; 21 adversarial cases (including missing/unsafe release ciphertext, forged markers, corrupt GCM, duplicate keys, and missing Git)"
+echo "PASS: keyless clean + real ciphertext controls; 22 adversarial cases (including missing/unsafe release ciphertext, forged markers, corrupt GCM, duplicate keys, and missing Git)"
